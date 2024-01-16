@@ -1,0 +1,146 @@
+/**
+ * Codasip s.r.o.
+ *
+ * CONFIDENTIAL
+ *
+ * Copyright 2022 Codasip s.r.o.
+ *
+ * All Rights Reserved.
+ *
+ * NOTICE: All information contained in this file, is and shall remain the property of
+ * Codasip s.r.o. and its suppliers, if any.
+ *
+ * The intellectual and technical concepts contained herein are confidential and proprietary to
+ * Codasip s.r.o. and are protected by trade secret and copyright law.  In addition, elements of the
+ * technical concepts may be patent pending.
+ *
+ * This file is part of the Codasip Studio product. No part of the Studio product, including this
+ * file, may be use, copied, modified, or distributed except in accordance with the terms contained
+ * in Codasip license agreement under which you obtained this file.
+ *
+ *  \file   ca_pipe4_me.codal
+ *  \author Codasip
+ *  \date   09.02.2022
+ *  \brief  cycle accurate model
+ */
+
+#include "ca_defines.hcodal"
+#include "config.hcodal"
+
+// -------------------------------------------------------------------------------------------------
+// Memory Stage
+// -------------------------------------------------------------------------------------------------
+event me : pipeline(pipe.MEM)
+{
+    use me_output;
+    use branch_logic;
+
+    semantics
+    {
+        uint32 data_sig;
+        int32 data_returned;
+        uint8 s_mem_data_ready;
+        uint32 s_mem_data_response;
+
+        ldst.transport(CP_PHS_DATA, s_mem_data_ready, s_mem_data_response, data_sig, r_ex_wtdat); 
+        data_returned = ldst.decode_data(data_sig, r_ex_alu_result, r_ex_mem_size);
+
+        switch(r_ex_mem_ops){
+            case MEM_NOP:
+                 s_me_mem_result = 0;
+                 break;
+            case MEM_LB:
+                 s_me_mem_result = (int32)(int8)data_returned;
+                 break;
+            case MEM_LBU:
+                 s_me_mem_result = (uint32)(uint8)data_returned;
+                 break;
+            case MEM_LH:
+                 s_me_mem_result =(int32)(int16)data_returned ;
+                 break;     
+            case MEM_LHU:
+                 s_me_mem_result =(uint32)(uint16)data_returned ;
+                 break; 
+            case MEM_LW:
+                 s_me_mem_result = (int32)data_returned ;
+                 break; 
+            case MEM_SB:
+                 s_me_mem_result = 0;
+                 break;
+            case MEM_SH:
+                 s_me_mem_result = 0;
+                 break;
+            case MEM_SW:
+                 s_me_mem_result = 0;
+                 break;
+            default:
+                 //codasip_fatal(ALU_ERROR, "ALU Immediate Decoder case: %d\n", r_id_mem_ops);
+                 s_me_mem_result = 0;
+                 break;
+                 
+        }
+
+        if(!s_mem_data_ready && !s_mem_data_response){
+            s_mem_stall = true;
+    
+       } else{
+            s_mem_stall = false;
+        }
+
+
+        if (r_ex_branch_inst == true || r_ex_jump_inst == true)
+        {
+            branch_logic();
+        }
+        // Update the pipeline registers between the Memory (MEM) and Write Back (WB) stages
+        me_output();
+    };
+};
+
+event me_output : pipeline(pipe.MEM)
+{
+    semantics
+    {
+        // ALU result from the EX pipeline register to pass along to the WB stage
+        r_mem_alu_result = r_ex_alu_result;
+        
+        r_mem_memdat = s_me_mem_result;
+        r_mem_memread = r_ex_memread;
+        // Passing control signals to the next stage, WB, through the MEM pipeline register
+        r_mem_rd          = r_ex_rd;
+        r_mem_regwrite    = r_ex_regwrite;
+        
+    };
+};
+
+event branch_logic : pipeline(pipe.MEM)
+{
+    semantics
+    {
+
+    switch(r_ex_branch_op){
+
+        case BRANCH_COND_TRUE:
+            s_me_take_branch = r_ex_zero;
+            break;
+        case BRANCH_COND_FALSE:
+            s_me_take_branch =  ~(r_ex_zero);
+            break;
+        case BRANCH_TRUE:
+            s_me_take_branch = true;
+            break;
+        case BRANCH_FALSE:
+            s_me_take_branch = false;
+            break;
+        default:
+            s_me_take_branch = 0;
+            break;
+
+
+        }
+
+
+    };
+
+
+};
